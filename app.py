@@ -3,190 +3,323 @@ import string
 import time
 from typing import Iterator
 import streamlit as st
+import pikepdf
 from pypdf import PdfReader, PdfWriter
 
 # -----------------------------------------------------------------------------
-# 1. Constants (Exact Same as Original Python pdf_tester.py)
+# Constants - Exact same as original pdf_tester.py
 # -----------------------------------------------------------------------------
-UPPERCASE_LETTERS = string.ascii_uppercase  # "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-PREFIX_LENGTH = 4
+UPPERCASE_LETTERS = string.ascii_uppercase  # A-Z
 YEAR_START = 1990
-YEAR_END = 2007  # inclusive
+YEAR_END = 2007
 
-NUM_PREFIXES = len(UPPERCASE_LETTERS) ** PREFIX_LENGTH  # 26**4 = 456,976
+NUM_PREFIXES = 26 ** 4        # 456,976
 NUM_YEARS = YEAR_END - YEAR_START + 1  # 18
 TOTAL_CANDIDATES = NUM_PREFIXES * NUM_YEARS  # 8,225,568
-BATCH_INTERVAL = 1000  # Fast batch interval to eliminate UI render overhead
-
-
-def _generate_prefixes() -> Iterator[str]:
-    """Lazily yield every 4-letter uppercase combination, AAAA..ZZZZ."""
-    letters = UPPERCASE_LETTERS
-    for a in letters:
-        for b in letters:
-            for c in letters:
-                for d in letters:
-                    yield a + b + c + d
+BATCH_SIZE = 2000  # UI refresh every N candidates
 
 
 def generate_candidates() -> Iterator[str]:
-    """
-    Lazily yield candidate passwords in the form XXXXYYYY, where XXXX is
-    an uppercase 4-letter combination and YYYY is a year in [1990, 2007].
-    """
+    """Yields XXXXYYYY passwords: 4 uppercase letters + year 1990-2007."""
     years = [str(y) for y in range(YEAR_START, YEAR_END + 1)]
-    for prefix in _generate_prefixes():
-        for year in years:
-            yield prefix + year
+    for a in UPPERCASE_LETTERS:
+        for b in UPPERCASE_LETTERS:
+            for c in UPPERCASE_LETTERS:
+                for d in UPPERCASE_LETTERS:
+                    prefix = f"{a}{b}{c}{d}"
+                    for year in years:
+                        yield f"{prefix}{year}"
 
 
 def validate_pdf(pdf_bytes: bytes) -> tuple[bool, str]:
-    """Verify the file is a valid, encrypted PDF."""
+    """Check PDF is valid and encrypted."""
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
         if not reader.is_encrypted:
-            return False, "This PDF is not password-protected. There is no password to search for."
-        return True, "Valid password-protected PDF."
+            return False, "This PDF is not password-protected."
+        return True, "OK"
     except Exception as exc:
-        return False, f"Could not read PDF: {exc}"
+        return False, f"Cannot read PDF: {exc}"
+
+
+def try_password_pikepdf(pdf_bytes: bytes, password: str) -> bool:
+    """Try a password using pikepdf's C++ qpdf engine."""
+    try:
+        with pikepdf.open(io.BytesIO(pdf_bytes), password=password):
+            return True
+    except pikepdf.PasswordError:
+        return False
+    except Exception:
+        return False
 
 
 def generate_unlocked_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
-    """Creates decrypted PDF for download."""
+    """Generate unlocked (no-password) PDF using pikepdf."""
     try:
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        reader.decrypt(password)
-        writer = PdfWriter()
-        for page in reader.pages:
-            writer.add_page(page)
-        out = io.BytesIO()
-        writer.write(out)
-        out.seek(0)
-        return out.getvalue()
+        with pikepdf.open(io.BytesIO(pdf_bytes), password=password) as pdf:
+            out = io.BytesIO()
+            pdf.save(out)
+            out.seek(0)
+            return out.getvalue()
     except Exception:
         return None
 
 
 # -----------------------------------------------------------------------------
-# 2. Page Configuration & Clean UI
+# Page config
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="PDF Password Tester",
-    page_icon="⚡",
+    page_title="PDF Password Recovery",
+    page_icon="🔓",
     layout="centered",
 )
 
-st.title("⚡ PDF Password Tester (Fast Batching)")
+# -----------------------------------------------------------------------------
+# CSS - Clean Modern Dark UI
+# -----------------------------------------------------------------------------
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-# Section 1: PDF Selection
-st.subheader("1. PDF File")
-uploaded_file = st.file_uploader(
-    "Choose a password-protected PDF",
+html, body, [class*="css"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.stApp { max-width: 720px; margin: 0 auto; }
+
+.hero {
+    background: linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 100%);
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 16px;
+    padding: 1.5rem;
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.hero h1 {
+    font-size: 1.9rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #e0e7ff, #a5b4fc, #818cf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0 0 0.4rem 0;
+}
+
+.hero p { color: #94a3b8; margin: 0; font-size: 0.9rem; }
+
+.engine-badge {
+    display: inline-block;
+    background: rgba(16,185,129,0.15);
+    border: 1px solid rgba(16,185,129,0.35);
+    color: #34d399;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    margin-bottom: 0.75rem;
+    letter-spacing: 0.04em;
+}
+
+.info-box {
+    background: rgba(30,41,59,0.6);
+    border: 1px solid rgba(71,85,105,0.4);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+    color: #cbd5e1;
+}
+.info-box code {
+    background: rgba(99,102,241,0.15);
+    color: #a5b4fc;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.result-card {
+    background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(5,150,105,0.08));
+    border: 1px solid #10b981;
+    border-radius: 14px;
+    padding: 1.5rem;
+    text-align: center;
+    margin: 1rem 0;
+}
+.result-card h3 { color: #34d399; margin: 0 0 0.5rem 0; font-size: 1.1rem; }
+.password-show {
+    font-size: 1.8rem;
+    font-weight: 700;
+    font-family: 'Consolas', monospace;
+    color: #10b981;
+    background: rgba(0,0,0,0.3);
+    padding: 0.4rem 1.5rem;
+    border-radius: 8px;
+    border: 1px dashed #10b981;
+    display: inline-block;
+    margin: 0.5rem 0;
+    letter-spacing: 2px;
+}
+.result-meta { color: #64748b; font-size: 0.82rem; margin-top: 0.4rem; }
+
+div.stButton > button {
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 1rem;
+    padding: 0.6rem 1.2rem;
+    width: 100%;
+    transition: opacity 0.2s;
+}
+div.stButton > button:hover { opacity: 0.9; }
+
+#MainMenu, header, footer { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# Header
+# -----------------------------------------------------------------------------
+st.markdown("""
+<div class="hero">
+    <span class="engine-badge">⚡ C++ qpdf Engine (pikepdf)</span>
+    <h1>🔓 PDF Password Recovery</h1>
+    <p>Upload a locked PDF. Password is recovered automatically using the fast C++ engine.<br/>
+    Format: <strong>XXXX + Year (1990–2007)</strong> — 8,225,568 combinations</p>
+</div>
+""", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# Info box
+# -----------------------------------------------------------------------------
+st.markdown(f"""
+<div class="info-box">
+    🎯 <strong>Search Pattern:</strong> <code>AAAA1990</code> → <code>ZZZZ2007</code>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    📊 <strong>Total:</strong> {NUM_PREFIXES:,} prefixes × {NUM_YEARS} years = <strong>{TOTAL_CANDIDATES:,} passwords</strong>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    🚀 <strong>Engine:</strong> C++ qpdf via pikepdf
+</div>
+""", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# Step 1: Upload
+# -----------------------------------------------------------------------------
+st.subheader("📁 Upload PDF")
+uploaded = st.file_uploader(
+    "Choose your password-protected PDF file",
     type=["pdf"],
     label_visibility="collapsed",
+    help="File is processed in memory. Never stored.",
 )
 
-pdf_ready = False
+pdf_valid = False
 pdf_bytes = None
 
-if uploaded_file is not None:
-    pdf_bytes = uploaded_file.getvalue()
-    is_valid, msg = validate_pdf(pdf_bytes)
-    if is_valid:
-        st.success(f"Ready: **{uploaded_file.name}**")
-        pdf_ready = True
+if uploaded:
+    pdf_bytes = uploaded.getvalue()
+    ok, msg = validate_pdf(pdf_bytes)
+    if ok:
+        st.success(f"✅ **{uploaded.name}** — Encrypted PDF ready.")
+        pdf_valid = True
     else:
-        st.error(msg)
+        st.error(f"❌ {msg}")
 else:
-    st.info("Select a PDF file to begin.")
+    st.caption("⬆️ Drag & drop or browse your `.pdf` file above.")
 
-# Section 2: Search Settings (Exact same as Original GUI)
-with st.expander("Search Settings", expanded=True):
-    st.write("**Password format:** `XXXXYYYY`")
-    st.write("`X` = uppercase letter (A-Z) &nbsp;&nbsp;&nbsp;&nbsp; `YYYY` = year")
-    st.write(f"**Years:** {YEAR_START} - {YEAR_END}")
-    st.write(f"**Total candidate passwords:** {NUM_PREFIXES:,} x {NUM_YEARS} = **{TOTAL_CANDIDATES:,}**")
+st.write("")
 
-# Section 3: Controls & Progress
-st.subheader("2. Progress & Search")
+# -----------------------------------------------------------------------------
+# Step 2: Start Search
+# -----------------------------------------------------------------------------
+st.subheader("🚀 Start Recovery")
 
-start_clicked = st.button(
-    "🚀 Start Search (Fast Batching)",
+start = st.button(
+    "🔓 Start Password Search",
     type="primary",
-    use_container_width=True,
-    disabled=not pdf_ready,
+    disabled=not pdf_valid,
 )
 
-if start_clicked and pdf_ready:
+if start and pdf_valid:
     progress_bar = st.progress(0.0)
-    status_text = st.empty()
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        stat_candidate = st.empty()
-    with col2:
-        stat_tested = st.empty()
-    with col3:
-        stat_elapsed = st.empty()
-    with col4:
-        stat_rate = st.empty()
-    with col5:
-        stat_pct = st.empty()
+    status = st.empty()
 
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    decrypt_fn = reader.decrypt
-    start_time = time.monotonic()
+    col1, col2, col3, col4 = st.columns(4)
+    m_tested  = col1.empty()
+    m_current = col2.empty()
+    m_speed   = col3.empty()
+    m_elapsed = col4.empty()
+
+    # Start search
+    t_start = time.monotonic()
     tested = 0
-    found_password = None
+    found = None
+    last_ui = t_start
     total = TOTAL_CANDIDATES
-    
-    status_text.info("⚡ Fast batch search in progress...")
+
+    status.info("⚡ C++ Engine searching...")
 
     for candidate in generate_candidates():
-        try:
-            if decrypt_fn(candidate):
-                found_password = candidate
-                tested += 1
-                break
-        except Exception:
-            pass
+        if try_password_pikepdf(pdf_bytes, candidate):
+            found = candidate
+            tested += 1
+            break
 
         tested += 1
 
-        # Fast batch trigger every 1,000 attempts
-        if tested % BATCH_INTERVAL == 0:
+        if tested % BATCH_SIZE == 0:
             now = time.monotonic()
-            elapsed = now - start_time
+            elapsed = now - t_start
             rate = tested / elapsed if elapsed > 0 else 0.0
-            pct = (tested / total) * 100.0
+            pct = tested / total
 
-            progress_bar.progress(min(1.0, tested / total))
-            stat_candidate.metric("Current", candidate)
-            stat_tested.metric("Tested", f"{tested:,}")
-            stat_elapsed.metric("Elapsed", f"{elapsed:.1f}s")
-            stat_rate.metric("Rate", f"{rate:,.0f}/s")
-            stat_pct.metric("Progress", f"{pct:.3f}%")
+            progress_bar.progress(min(1.0, pct))
+            m_tested.metric("Tested", f"{tested:,}")
+            m_current.metric("Current", candidate)
+            m_speed.metric("Speed", f"{rate:,.0f}/s")
+            m_elapsed.metric("Elapsed", f"{elapsed:.0f}s")
 
-    total_elapsed = time.monotonic() - start_time
-    status_text.empty()
+    total_elapsed = time.monotonic() - t_start
+    status.empty()
 
-    if found_password:
+    if found:
         progress_bar.progress(1.0)
-        stat_pct.metric("Progress", "100.0%")
-        st.success(f"🎉 **Password Found: `{found_password}`**")
-        st.write(f"• **Attempts:** {tested:,}")
-        st.write(f"• **Elapsed time:** {total_elapsed:.1f}s ({tested/total_elapsed if total_elapsed>0 else 0:,.0f} passwords/sec)")
         st.balloons()
 
-        # Download Unlocked PDF
-        unlocked = generate_unlocked_pdf(pdf_bytes, found_password)
+        rate_final = tested / total_elapsed if total_elapsed > 0 else 0
+        st.markdown(f"""
+        <div class="result-card">
+            <h3>🎉 Password Found!</h3>
+            <div class="password-show">{found}</div>
+            <div class="result-meta">
+                {tested:,} candidates tested &nbsp;·&nbsp;
+                {total_elapsed:.1f}s elapsed &nbsp;·&nbsp;
+                {rate_final:,.0f} passwords/sec
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Download unlocked PDF
+        unlocked = generate_unlocked_pdf(pdf_bytes, found)
         if unlocked:
             st.download_button(
-                label="📥 Download Unlocked PDF",
+                label="📥 Download Unlocked PDF (No Password)",
                 data=unlocked,
-                file_name=f"unlocked_{uploaded_file.name}",
+                file_name=f"unlocked_{uploaded.name}",
                 mime="application/pdf",
                 type="primary",
             )
     else:
-        st.warning("Password not found in the specified pattern/range.")
+        progress_bar.progress(1.0)
+        st.warning(
+            f"❌ Password not found in {tested:,} candidates ({total_elapsed:.0f}s). "
+            "The password may be outside the `AAAA1990–ZZZZ2007` range."
+        )
+
+# -----------------------------------------------------------------------------
+# Footer
+# -----------------------------------------------------------------------------
+st.markdown("""
+<div style="text-align:center; color:#475569; font-size:0.78rem; margin-top:2.5rem;
+border-top:1px solid rgba(255,255,255,0.06); padding-top:1rem;">
+🔒 Files processed in-memory. Nothing is stored or transmitted.
+</div>
+""", unsafe_allow_html=True)

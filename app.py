@@ -16,6 +16,7 @@ YEAR_END = 2007  # inclusive
 NUM_PREFIXES = len(UPPERCASE_LETTERS) ** PREFIX_LENGTH  # 26**4 = 456,976
 NUM_YEARS = YEAR_END - YEAR_START + 1  # 18
 TOTAL_CANDIDATES = NUM_PREFIXES * NUM_YEARS  # 8,225,568
+BATCH_INTERVAL = 1000  # Fast batch interval to eliminate UI render overhead
 
 
 def _generate_prefixes() -> Iterator[str]:
@@ -71,11 +72,11 @@ def generate_unlocked_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="PDF Password Tester",
-    page_icon="📄",
+    page_icon="⚡",
     layout="centered",
 )
 
-st.title("📄 PDF Password Tester")
+st.title("⚡ PDF Password Tester (Fast Batching)")
 
 # Section 1: PDF Selection
 st.subheader("1. PDF File")
@@ -110,7 +111,7 @@ with st.expander("Search Settings", expanded=True):
 st.subheader("2. Progress & Search")
 
 start_clicked = st.button(
-    "Start Search",
+    "🚀 Start Search (Fast Batching)",
     type="primary",
     use_container_width=True,
     disabled=not pdf_ready,
@@ -133,38 +134,38 @@ if start_clicked and pdf_ready:
         stat_pct = st.empty()
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
+    decrypt_fn = reader.decrypt
     start_time = time.monotonic()
     tested = 0
     found_password = None
-    last_ui_update = start_time
+    total = TOTAL_CANDIDATES
     
-    status_text.info("Searching for password...")
+    status_text.info("⚡ Fast batch search in progress...")
 
     for candidate in generate_candidates():
         try:
-            match = reader.decrypt(candidate)
+            if decrypt_fn(candidate):
+                found_password = candidate
+                tested += 1
+                break
         except Exception:
-            match = 0
+            pass
 
         tested += 1
 
-        if match:
-            found_password = candidate
-            break
-
-        now = time.monotonic()
-        if (now - last_ui_update) >= 0.2 or (tested % 300 == 0):
+        # Fast batch trigger every 1,000 attempts
+        if tested % BATCH_INTERVAL == 0:
+            now = time.monotonic()
             elapsed = now - start_time
             rate = tested / elapsed if elapsed > 0 else 0.0
-            pct = (tested / TOTAL_CANDIDATES) * 100.0
+            pct = (tested / total) * 100.0
 
-            progress_bar.progress(min(1.0, tested / TOTAL_CANDIDATES))
+            progress_bar.progress(min(1.0, tested / total))
             stat_candidate.metric("Current", candidate)
             stat_tested.metric("Tested", f"{tested:,}")
             stat_elapsed.metric("Elapsed", f"{elapsed:.1f}s")
             stat_rate.metric("Rate", f"{rate:,.0f}/s")
             stat_pct.metric("Progress", f"{pct:.3f}%")
-            last_ui_update = now
 
     total_elapsed = time.monotonic() - start_time
     status_text.empty()
@@ -174,7 +175,7 @@ if start_clicked and pdf_ready:
         stat_pct.metric("Progress", "100.0%")
         st.success(f"🎉 **Password Found: `{found_password}`**")
         st.write(f"• **Attempts:** {tested:,}")
-        st.write(f"• **Elapsed time:** {total_elapsed:.1f}s")
+        st.write(f"• **Elapsed time:** {total_elapsed:.1f}s ({tested/total_elapsed if total_elapsed>0 else 0:,.0f} passwords/sec)")
         st.balloons()
 
         # Download Unlocked PDF

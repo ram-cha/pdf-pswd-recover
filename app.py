@@ -1,26 +1,27 @@
 import io
 import string
 import time
+import zipfile
 from typing import Iterator
 import streamlit as st
 import pikepdf
 from pypdf import PdfReader, PdfWriter
 
 # -----------------------------------------------------------------------------
-# Constants - Exact same as original pdf_tester.py
+# Constants - Same as original
 # -----------------------------------------------------------------------------
-UPPERCASE_LETTERS = string.ascii_uppercase  # A-Z
+UPPERCASE_LETTERS = string.ascii_uppercase
 YEAR_START = 1990
 YEAR_END = 2007
 
-NUM_PREFIXES = 26 ** 4        # 456,976
-NUM_YEARS = YEAR_END - YEAR_START + 1  # 18
+NUM_PREFIXES = 26 ** 4
+NUM_YEARS = YEAR_END - YEAR_START + 1
 TOTAL_CANDIDATES = NUM_PREFIXES * NUM_YEARS  # 8,225,568
-BATCH_SIZE = 2000  # UI refresh every N candidates
+BATCH_SIZE = 1500
 
 
 def generate_candidates() -> Iterator[str]:
-    """Yields XXXXYYYY passwords: 4 uppercase letters + year 1990-2007."""
+    """Yields XXXXYYYY: 4 uppercase letters + year 1990-2007."""
     years = [str(y) for y in range(YEAR_START, YEAR_END + 1)]
     for a in UPPERCASE_LETTERS:
         for b in UPPERCASE_LETTERS:
@@ -31,19 +32,17 @@ def generate_candidates() -> Iterator[str]:
                         yield f"{prefix}{year}"
 
 
-def validate_pdf(pdf_bytes: bytes) -> tuple[bool, str]:
-    """Check PDF is valid and encrypted."""
+def is_encrypted(pdf_bytes: bytes) -> bool:
+    """Returns True if PDF is password-protected."""
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
-        if not reader.is_encrypted:
-            return False, "This PDF is not password-protected."
-        return True, "OK"
-    except Exception as exc:
-        return False, f"Cannot read PDF: {exc}"
+        return reader.is_encrypted
+    except Exception:
+        return False
 
 
-def try_password_pikepdf(pdf_bytes: bytes, password: str) -> bool:
-    """Try a password using pikepdf's C++ qpdf engine."""
+def try_password(pdf_bytes: bytes, password: str) -> bool:
+    """Test a password against a PDF using C++ qpdf engine."""
     try:
         with pikepdf.open(io.BytesIO(pdf_bytes), password=password):
             return True
@@ -53,8 +52,8 @@ def try_password_pikepdf(pdf_bytes: bytes, password: str) -> bool:
         return False
 
 
-def generate_unlocked_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
-    """Generate unlocked (no-password) PDF using pikepdf."""
+def unlock_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
+    """Return decrypted PDF bytes using pikepdf."""
     try:
         with pikepdf.open(io.BytesIO(pdf_bytes), password=password) as pdf:
             out = io.BytesIO()
@@ -65,8 +64,18 @@ def generate_unlocked_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
         return None
 
 
+def make_zip(files: list[tuple[str, bytes]]) -> bytes:
+    """Pack multiple (filename, bytes) pairs into a ZIP."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in files:
+            zf.writestr(name, data)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 # -----------------------------------------------------------------------------
-# Page config
+# Page Setup
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="PDF Password Recovery",
@@ -74,102 +83,81 @@ st.set_page_config(
     layout="centered",
 )
 
-# -----------------------------------------------------------------------------
-# CSS - Clean Modern Dark UI
-# -----------------------------------------------------------------------------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 html, body, [class*="css"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Inter', -apple-system, sans-serif;
 }
 
-.stApp { max-width: 720px; margin: 0 auto; }
+.stApp { max-width: 760px; margin: 0 auto; }
 
 .hero {
-    background: linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 100%);
-    border: 1px solid rgba(99,102,241,0.25);
+    background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.08));
+    border: 1px solid rgba(99,102,241,0.28);
     border-radius: 16px;
-    padding: 1.5rem;
+    padding: 1.4rem 1.5rem;
     text-align: center;
     margin-bottom: 1.5rem;
 }
-
 .hero h1 {
-    font-size: 1.9rem;
-    font-weight: 700;
+    font-size: 1.85rem; font-weight: 700;
     background: linear-gradient(135deg, #e0e7ff, #a5b4fc, #818cf8);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin: 0 0 0.4rem 0;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin: 0 0 0.3rem 0;
 }
+.hero p { color: #94a3b8; margin: 0; font-size: 0.88rem; }
 
-.hero p { color: #94a3b8; margin: 0; font-size: 0.9rem; }
-
-.engine-badge {
+.badge {
     display: inline-block;
-    background: rgba(16,185,129,0.15);
-    border: 1px solid rgba(16,185,129,0.35);
-    color: #34d399;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 999px;
-    margin-bottom: 0.75rem;
+    background: rgba(16,185,129,0.14);
+    border: 1px solid rgba(16,185,129,0.32);
+    color: #34d399; font-size: 0.72rem; font-weight: 600;
+    padding: 2px 10px; border-radius: 999px; margin-bottom: 0.6rem;
     letter-spacing: 0.04em;
 }
 
-.info-box {
-    background: rgba(30,41,59,0.6);
+/* PDF card */
+.pdf-card {
+    background: rgba(30,41,59,0.55);
     border: 1px solid rgba(71,85,105,0.4);
-    border-radius: 10px;
-    padding: 0.85rem 1rem;
-    margin-bottom: 1rem;
-    font-size: 0.88rem;
-    color: #cbd5e1;
+    border-radius: 12px;
+    padding: 0.85rem 1.1rem;
+    margin-bottom: 0.75rem;
 }
-.info-box code {
-    background: rgba(99,102,241,0.15);
-    color: #a5b4fc;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.85rem;
+.pdf-name {
+    font-weight: 600; font-size: 0.92rem; color: #e2e8f0;
+    margin-bottom: 0.3rem; word-break: break-all;
+}
+.pdf-status-wait  { color: #94a3b8; font-size: 0.82rem; }
+.pdf-status-found { color: #10b981; font-size: 0.88rem; font-weight: 600; }
+.pdf-status-fail  { color: #f87171; font-size: 0.82rem; }
+
+.pwd-tag {
+    display: inline-block;
+    background: rgba(16,185,129,0.12);
+    border: 1px solid #10b981;
+    color: #34d399;
+    font-family: 'Consolas', monospace;
+    font-size: 1.1rem; font-weight: 700;
+    padding: 2px 14px; border-radius: 6px;
+    letter-spacing: 1.5px; margin-left: 6px;
 }
 
-.result-card {
-    background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(5,150,105,0.08));
-    border: 1px solid #10b981;
-    border-radius: 14px;
-    padding: 1.5rem;
-    text-align: center;
-    margin: 1rem 0;
+.stat-bar {
+    background: rgba(15,23,42,0.6);
+    border: 1px solid rgba(71,85,105,0.35);
+    border-radius: 10px;
+    padding: 0.7rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.82rem; color: #94a3b8;
 }
-.result-card h3 { color: #34d399; margin: 0 0 0.5rem 0; font-size: 1.1rem; }
-.password-show {
-    font-size: 1.8rem;
-    font-weight: 700;
-    font-family: 'Consolas', monospace;
-    color: #10b981;
-    background: rgba(0,0,0,0.3);
-    padding: 0.4rem 1.5rem;
-    border-radius: 8px;
-    border: 1px dashed #10b981;
-    display: inline-block;
-    margin: 0.5rem 0;
-    letter-spacing: 2px;
-}
-.result-meta { color: #64748b; font-size: 0.82rem; margin-top: 0.4rem; }
 
 div.stButton > button {
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 1rem;
-    padding: 0.6rem 1.2rem;
-    width: 100%;
-    transition: opacity 0.2s;
+    border-radius: 10px; font-weight: 600; font-size: 0.95rem;
+    padding: 0.55rem 1.1rem; width: 100%;
 }
-div.stButton > button:hover { opacity: 0.9; }
 
 #MainMenu, header, footer { visibility: hidden; }
 </style>
@@ -180,146 +168,175 @@ div.stButton > button:hover { opacity: 0.9; }
 # -----------------------------------------------------------------------------
 st.markdown("""
 <div class="hero">
-    <span class="engine-badge">⚡ C++ qpdf Engine (pikepdf)</span>
+    <span class="badge">⚡ C++ qpdf Engine (pikepdf)</span>
     <h1>🔓 PDF Password Recovery</h1>
-    <p>Upload a locked PDF. Password is recovered automatically using the fast C++ engine.<br/>
-    Format: <strong>XXXX + Year (1990–2007)</strong> — 8,225,568 combinations</p>
+    <p>Upload one or more locked PDFs. Password found automatically shown below each file.<br>
+    Pattern: <strong>AAAA1990 → ZZZZ2007</strong> &nbsp;·&nbsp; 8,225,568 combinations</p>
 </div>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Info box
+# Upload
 # -----------------------------------------------------------------------------
-st.markdown(f"""
-<div class="info-box">
-    🎯 <strong>Search Pattern:</strong> <code>AAAA1990</code> → <code>ZZZZ2007</code>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    📊 <strong>Total:</strong> {NUM_PREFIXES:,} prefixes × {NUM_YEARS} years = <strong>{TOTAL_CANDIDATES:,} passwords</strong>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    🚀 <strong>Engine:</strong> C++ qpdf via pikepdf
-</div>
-""", unsafe_allow_html=True)
-
-# -----------------------------------------------------------------------------
-# Step 1: Upload
-# -----------------------------------------------------------------------------
-st.subheader("📁 Upload PDF")
-uploaded = st.file_uploader(
-    "Choose your password-protected PDF file",
+st.subheader("📁 Upload PDF Files")
+uploaded_files = st.file_uploader(
+    "Choose one or multiple password-protected PDFs",
     type=["pdf"],
+    accept_multiple_files=True,
     label_visibility="collapsed",
-    help="File is processed in memory. Never stored.",
+    help="Files are processed in-memory. Nothing is stored.",
 )
 
-pdf_valid = False
-pdf_bytes = None
+# Validate all uploaded files
+valid_files = []  # list of (name, bytes)
+if uploaded_files:
+    for f in uploaded_files:
+        data = f.getvalue()
+        if is_encrypted(data):
+            valid_files.append((f.name, data))
+        else:
+            st.warning(f"⚠️ **{f.name}** is not password-protected — skipped.")
 
-if uploaded:
-    pdf_bytes = uploaded.getvalue()
-    ok, msg = validate_pdf(pdf_bytes)
-    if ok:
-        st.success(f"✅ **{uploaded.name}** — Encrypted PDF ready.")
-        pdf_valid = True
+    if valid_files:
+        st.success(f"✅ {len(valid_files)} encrypted PDF(s) ready to unlock.")
     else:
-        st.error(f"❌ {msg}")
+        st.info("No encrypted PDFs found in uploaded files.")
 else:
-    st.caption("⬆️ Drag & drop or browse your `.pdf` file above.")
+    st.caption("⬆️ Drag & drop or click to browse. Multiple files supported.")
 
 st.write("")
 
 # -----------------------------------------------------------------------------
-# Step 2: Start Search
+# Start Search
 # -----------------------------------------------------------------------------
-st.subheader("🚀 Start Recovery")
-
 start = st.button(
-    "🔓 Start Password Search",
+    "🔓 Start Password Search for All PDFs",
     type="primary",
-    disabled=not pdf_valid,
+    disabled=len(valid_files) == 0,
 )
 
-if start and pdf_valid:
-    progress_bar = st.progress(0.0)
-    status = st.empty()
+if start and valid_files:
+    n = len(valid_files)
 
-    col1, col2, col3, col4 = st.columns(4)
-    m_tested  = col1.empty()
-    m_current = col2.empty()
-    m_speed   = col3.empty()
-    m_elapsed = col4.empty()
+    # Track results per file: None = searching, str = found, False = not found
+    results: dict[str, str | bool | None] = {name: None for name, _ in valid_files}
+    unlocked_pdfs: dict[str, bytes] = {}
 
-    # Start search
+    # --- UI placeholders for each PDF card ---
+    card_placeholders = {}
+    for name, _ in valid_files:
+        card_placeholders[name] = st.empty()
+
+    def render_cards():
+        for fname, _ in valid_files:
+            r = results[fname]
+            if r is None:
+                status_html = '<span class="pdf-status-wait">🔄 Searching...</span>'
+            elif r is False:
+                status_html = '<span class="pdf-status-fail">❌ Password not found in range.</span>'
+            else:
+                status_html = f'<span class="pdf-status-found">✅ Password Found: <span class="pwd-tag">{r}</span></span>'
+            card_placeholders[fname].markdown(
+                f'<div class="pdf-card"><div class="pdf-name">📄 {fname}</div>{status_html}</div>',
+                unsafe_allow_html=True,
+            )
+
+    render_cards()
+
+    # --- Global progress / stats ---
+    prog_bar = st.progress(0.0)
+    stat_ph = st.empty()
+
+    # --- Search ---
     t_start = time.monotonic()
     tested = 0
-    found = None
-    last_ui = t_start
-    total = TOTAL_CANDIDATES
-
-    status.info("⚡ C++ Engine searching...")
+    remaining = list(valid_files)  # files still being searched
 
     for candidate in generate_candidates():
-        if try_password_pikepdf(pdf_bytes, candidate):
-            found = candidate
-            tested += 1
+        if not remaining:
             break
+
+        newly_found = []
+        for fname, pdf_data in remaining:
+            if try_password(pdf_data, candidate):
+                results[fname] = candidate
+                unlocked = unlock_pdf(pdf_data, candidate)
+                if unlocked:
+                    unlocked_pdfs[fname] = unlocked
+                newly_found.append(fname)
+
+        # Remove found files from remaining list
+        remaining = [(n, d) for n, d in remaining if n not in newly_found]
 
         tested += 1
 
-        if tested % BATCH_SIZE == 0:
+        if newly_found or tested % BATCH_SIZE == 0:
             now = time.monotonic()
             elapsed = now - t_start
             rate = tested / elapsed if elapsed > 0 else 0.0
-            pct = tested / total
+            pct = min(1.0, tested / TOTAL_CANDIDATES)
+            found_count = n - len(remaining)
 
-            progress_bar.progress(min(1.0, pct))
-            m_tested.metric("Tested", f"{tested:,}")
-            m_current.metric("Current", candidate)
-            m_speed.metric("Speed", f"{rate:,.0f}/s")
-            m_elapsed.metric("Elapsed", f"{elapsed:.0f}s")
+            prog_bar.progress(pct)
+            stat_ph.markdown(
+                f'<div class="stat-bar">'
+                f'⏱ <b>{elapsed:.0f}s</b> elapsed &nbsp;·&nbsp; '
+                f'🔑 Tested: <b>{tested:,}</b> &nbsp;·&nbsp; '
+                f'🚀 Speed: <b>{rate:,.0f}/s</b> &nbsp;·&nbsp; '
+                f'✅ Unlocked: <b>{found_count}/{n}</b>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            if newly_found:
+                render_cards()
 
+    # Mark remaining (not found) files
+    for fname, _ in remaining:
+        results[fname] = False
+    render_cards()
+
+    prog_bar.progress(1.0)
     total_elapsed = time.monotonic() - t_start
-    status.empty()
+    found_count = sum(1 for v in results.values() if v not in (None, False))
+    stat_ph.markdown(
+        f'<div class="stat-bar">'
+        f'✅ Done in <b>{total_elapsed:.1f}s</b> &nbsp;·&nbsp; '
+        f'Unlocked: <b>{found_count}/{n}</b> files &nbsp;·&nbsp; '
+        f'Tested: <b>{tested:,}</b> candidates'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-    if found:
-        progress_bar.progress(1.0)
-        st.balloons()
-
-        rate_final = tested / total_elapsed if total_elapsed > 0 else 0
-        st.markdown(f"""
-        <div class="result-card">
-            <h3>🎉 Password Found!</h3>
-            <div class="password-show">{found}</div>
-            <div class="result-meta">
-                {tested:,} candidates tested &nbsp;·&nbsp;
-                {total_elapsed:.1f}s elapsed &nbsp;·&nbsp;
-                {rate_final:,.0f} passwords/sec
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Download unlocked PDF
-        unlocked = generate_unlocked_pdf(pdf_bytes, found)
-        if unlocked:
+    # --- Individual download buttons ---
+    if unlocked_pdfs:
+        st.subheader("📥 Download Unlocked Files")
+        for fname, data in unlocked_pdfs.items():
             st.download_button(
-                label="📥 Download Unlocked PDF (No Password)",
-                data=unlocked,
-                file_name=f"unlocked_{uploaded.name}",
+                label=f"⬇️ Download unlocked_{fname}",
+                data=data,
+                file_name=f"unlocked_{fname}",
                 mime="application/pdf",
+            )
+
+        # --- ZIP download if more than 1 ---
+        if len(unlocked_pdfs) > 1:
+            zip_data = make_zip(
+                [(f"unlocked_{n}", d) for n, d in unlocked_pdfs.items()]
+            )
+            st.download_button(
+                label="📦 Download All Unlocked PDFs (.ZIP)",
+                data=zip_data,
+                file_name="unlocked_pdfs.zip",
+                mime="application/zip",
                 type="primary",
             )
-    else:
-        progress_bar.progress(1.0)
-        st.warning(
-            f"❌ Password not found in {tested:,} candidates ({total_elapsed:.0f}s). "
-            "The password may be outside the `AAAA1990–ZZZZ2007` range."
-        )
 
 # -----------------------------------------------------------------------------
 # Footer
 # -----------------------------------------------------------------------------
 st.markdown("""
-<div style="text-align:center; color:#475569; font-size:0.78rem; margin-top:2.5rem;
-border-top:1px solid rgba(255,255,255,0.06); padding-top:1rem;">
-🔒 Files processed in-memory. Nothing is stored or transmitted.
+<div style="text-align:center;color:#475569;font-size:0.78rem;margin-top:2.5rem;
+border-top:1px solid rgba(255,255,255,0.06);padding-top:1rem;">
+🔒 Files processed in-memory. Nothing stored or transmitted externally.
 </div>
 """, unsafe_allow_html=True)

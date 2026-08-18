@@ -2,186 +2,116 @@ import io
 import itertools
 import string
 import time
+from typing import Generator, Iterable, Union
 import streamlit as st
 from pypdf import PdfReader, PdfWriter
 
 # -----------------------------------------------------------------------------
-# 1. Page Configuration & Mobile-First Ultra-Modern CSS
+# 1. Page Configuration
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="PDF KeyUnlock - Fast Password Recovery & Unprotected PDF",
+    page_title="PDF Password Unlocker",
     page_icon="🔓",
-    layout="wide",
+    layout="centered",
     initial_sidebar_state="collapsed",
 )
 
+# -----------------------------------------------------------------------------
+# 2. Modern Mobile-Friendly CSS
+# -----------------------------------------------------------------------------
 st.markdown(
     """
     <style>
-    /* Google Font Import */
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-
+    
     html, body, [class*="css"] {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    /* Container Spacing */
-    .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 3rem !important;
-        max-width: 960px !important;
-    }
-
-    /* Hero Header */
-    .hero-container {
+    .main-header {
         text-align: center;
-        padding: 1.5rem 1rem 2rem 1rem;
-        background: linear-gradient(180deg, rgba(99, 102, 241, 0.1) 0%, rgba(15, 23, 42, 0) 100%);
-        border-radius: 20px;
+        padding: 1.2rem 1rem;
+        background: linear-gradient(180deg, rgba(99, 102, 241, 0.12) 0%, rgba(15, 23, 42, 0) 100%);
+        border-radius: 16px;
+        border: 1px solid rgba(99, 102, 241, 0.25);
         margin-bottom: 1.5rem;
-        border: 1px solid rgba(99, 102, 241, 0.2);
-    }
-    
-    .badge-pill {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 9999px;
-        background: rgba(99, 102, 241, 0.15);
-        color: #818cf8;
-        font-size: 0.8rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        margin-bottom: 0.75rem;
-        border: 1px solid rgba(99, 102, 241, 0.3);
     }
 
-    .hero-title {
-        font-size: clamp(1.8rem, 4vw, 2.6rem);
+    .main-title {
+        font-size: 2rem;
         font-weight: 800;
-        background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #818cf8 100%);
+        background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 50%, #818cf8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        line-height: 1.2;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.25rem;
     }
 
-    .hero-subtitle {
+    .main-sub {
         color: #94a3b8;
-        font-size: clamp(0.9rem, 2vw, 1.05rem);
-        max-width: 600px;
-        margin: 0 auto;
-        line-height: 1.5;
+        font-size: 0.95rem;
     }
 
-    /* Modern Card Styles */
-    .glass-card {
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 16px;
-        padding: 1.25rem;
-        margin-bottom: 1.25rem;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-    }
-
-    /* Mobile Responsive Metrics */
-    .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-        gap: 0.75rem;
-        margin: 1rem 0;
-    }
-
-    .metric-box {
-        background: rgba(15, 23, 42, 0.8);
-        border: 1px solid rgba(99, 102, 241, 0.2);
+    .card-box {
+        background: #131b2e;
+        border: 1px solid #1e293b;
         border-radius: 12px;
-        padding: 0.85rem;
-        text-align: center;
+        padding: 1rem;
+        margin-bottom: 1rem;
     }
 
-    .metric-val {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #38bdf8;
-        font-family: monospace;
-    }
-
-    .metric-lbl {
-        font-size: 0.75rem;
-        color: #94a3b8;
-        margin-top: 0.25rem;
-        text-transform: uppercase;
-        font-weight: 600;
-    }
-
-    /* Success Card */
-    .success-banner {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.05) 100%);
+    .success-box {
+        background: rgba(16, 185, 129, 0.12);
         border: 1px solid #10b981;
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin: 1.5rem 0;
+        border-radius: 14px;
+        padding: 1.25rem;
+        margin: 1.25rem 0;
         text-align: center;
-        box-shadow: 0 0 30px rgba(16, 185, 129, 0.15);
     }
 
-    .password-display {
-        font-size: 1.75rem;
-        font-weight: 800;
+    .pwd-pill {
+        display: inline-block;
+        font-size: 1.5rem;
+        font-weight: 700;
         color: #10b981;
         background: #0b0f19;
-        padding: 0.5rem 1.5rem;
-        border-radius: 10px;
-        display: inline-block;
-        font-family: 'Consolas', 'Courier New', monospace;
-        letter-spacing: 2px;
+        padding: 0.4rem 1.2rem;
+        border-radius: 8px;
+        font-family: monospace;
+        letter-spacing: 1.5px;
         border: 1px dashed #10b981;
-        margin: 0.75rem 0;
+        margin: 0.5rem 0;
     }
 
-    /* Primary Buttons on Mobile */
     div.stButton > button {
-        border-radius: 12px;
+        border-radius: 10px;
         font-weight: 600;
-        padding: 0.65rem 1.25rem;
-        transition: all 0.2s ease;
+        padding: 0.5rem 1rem;
     }
 
-    div.stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
-    }
-    
-    /* Hide Streamlit footer branding */
-    footer {visibility: hidden;}
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
+    #MainMenu, header, footer {visibility: hidden;}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 # -----------------------------------------------------------------------------
-# 2. Helper Functions & Core Decryption Engine
+# 3. Core Logic Helpers
 # -----------------------------------------------------------------------------
 
-def validate_pdf_bytes(pdf_bytes: bytes) -> tuple[bool, str, int]:
-    """Validates PDF readability and encryption status."""
+def validate_pdf_stream(pdf_bytes: bytes) -> tuple[bool, str, int]:
+    """Validates if PDF is readable and encrypted."""
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
         num_pages = len(reader.pages)
         if not reader.is_encrypted:
             return False, "This PDF is already unprotected (No password required).", num_pages
-        return True, "Valid encrypted PDF ready for unlocking.", num_pages
+        return True, "Valid password-protected PDF.", num_pages
     except Exception as exc:
-        return False, f"Could not read PDF file: {exc}", 0
+        return False, f"Could not read PDF: {exc}", 0
 
 
-def create_unlocked_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
-    """Decrypts and returns unprotected PDF bytes."""
+def generate_unlocked_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
+    """Decrypts and creates a clean unprotected PDF in memory."""
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
         reader.decrypt(password)
@@ -196,8 +126,8 @@ def create_unlocked_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
         return None
 
 
-def create_sample_demo_pdf(password: str = "RAMK1998") -> bytes:
-    """Generates an in-memory sample encrypted PDF for instant 1-click testing."""
+def create_demo_pdf(password: str = "RAMK1998") -> bytes:
+    """Generates an in-memory sample encrypted PDF for testing."""
     writer = PdfWriter()
     writer.add_blank_page(width=300, height=200)
     writer.encrypt(password)
@@ -208,313 +138,271 @@ def create_sample_demo_pdf(password: str = "RAMK1998") -> bytes:
 
 
 # -----------------------------------------------------------------------------
-# 3. Header & Hero Section
+# 4. Header
 # -----------------------------------------------------------------------------
 
 st.markdown(
     """
-    <div class="hero-container">
-        <span class="badge-pill">⚡ Ultra Fast & Secure</span>
-        <div class="hero-title">PDF Password Recovery</div>
-        <div class="hero-subtitle">
-            Recover lost passwords for your authorized bank statements, pay slips, and documents in seconds — right from your browser.
-        </div>
+    <div class="main-header">
+        <div class="main-title">🔓 PDF Password Unlocker</div>
+        <div class="main-sub">Fast, secure in-browser recovery for salary slips, bank statements & personal PDFs</div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 # -----------------------------------------------------------------------------
-# 4. Step 1: Upload / Choose PDF
+# 5. Step 1: Upload File
 # -----------------------------------------------------------------------------
 
-st.markdown("### 📄 Step 1: Select Your PDF File")
+st.subheader("1️⃣ Upload PDF File")
 
-pdf_source = st.radio(
-    "Choose PDF source:",
-    ["📤 Upload My PDF File", "🧪 Test with Demo Locked PDF (Password: RAMK1998)"],
-    horizontal=True,
-    label_visibility="collapsed",
-)
+col_src1, col_src2 = st.columns(2)
+with col_src1:
+    source_choice = st.radio(
+        "Choose Mode:",
+        ["📁 My PDF Document", "🧪 Instant Test Demo (Sample PDF)"],
+        label_visibility="collapsed",
+    )
 
 pdf_bytes = None
 file_name = "document.pdf"
 
-if pdf_source == "📤 Upload My PDF File":
-    uploaded_file = st.file_uploader(
-        "Upload locked PDF",
+if source_choice == "📁 My PDF Document":
+    up_file = st.file_uploader(
+        "Upload PDF",
         type=["pdf"],
-        help="All processing happens securely in-memory. Your files are never stored.",
         label_visibility="collapsed",
+        help="Secure: File stays strictly inside your session memory.",
     )
-    if uploaded_file is not None:
-        pdf_bytes = uploaded_file.getvalue()
-        file_name = uploaded_file.name
+    if up_file is not None:
+        pdf_bytes = up_file.getvalue()
+        file_name = up_file.name
 else:
-    pdf_bytes = create_sample_demo_pdf("RAMK1998")
-    file_name = "demo_sample_encrypted.pdf"
-    st.info("🧪 **Demo PDF Active**: Password is set to `RAMK1998` (Initials `RAMK` + Year `1998`). Test Smart Mode below!")
+    pdf_bytes = create_demo_pdf("RAMK1998")
+    file_name = "sample_test.pdf"
+    st.info("💡 **Demo PDF Active**: Password is set to `RAMK1998` (Initials `RAMK` + Year `1998`).")
 
-# Validation
-pdf_ready = False
+# Validation check
+pdf_valid = False
 if pdf_bytes is not None:
-    is_valid, msg, pages = validate_pdf_bytes(pdf_bytes)
+    is_valid, msg, pages = validate_pdf_stream(pdf_bytes)
     if is_valid:
-        st.success(f"✅ **{file_name}** ({pages} page{'s' if pages>1 else ''}) is encrypted and ready.")
-        pdf_ready = True
+        st.success(f"✅ **{file_name}** ({pages} page{'s' if pages>1 else ''}) - Locked & Ready to Search.")
+        pdf_valid = True
     else:
         st.error(f"❌ {msg}")
-        pdf_ready = False
 else:
-    st.caption("👆 Tap or drag-and-drop your `.pdf` file above to begin.")
+    st.caption("Upload a `.pdf` file above to begin.")
 
-st.divider()
-
-# -----------------------------------------------------------------------------
-# 5. Step 2: Choose Search Strategy (Mobile-Friendly Tabs)
-# -----------------------------------------------------------------------------
-
-st.markdown("### ⚡ Step 2: Choose Password Pattern")
-
-tab_smart, tab_pin, tab_full, tab_wordlist = st.tabs([
-    "🚀 Smart Pattern (Name/Letters + Year)",
-    "🔢 Numeric PIN (4–8 Digits)",
-    "🔤 Full A-Z Search",
-    "📝 Custom Wordlist",
-])
-
-candidates_list: list[str] | None = None
-lazy_generator = None
-estimated_total = 0
-
-# --- Tab 1: Smart Mode (Most popular for Indian bank statements, Aadhaar, salary slips) ---
-with tab_smart:
-    st.markdown("💡 *Best for Pay Slips, Bank Statements, PAN (e.g. `RAMK1998`, `KUMAR2001`, `ab1995`)*")
-    
-    col_p1, col_p2 = st.columns([1.5, 1])
-    with col_p1:
-        prefix_input = st.text_input(
-            "Known Name Initials / Prefix Letters",
-            value="RAMK" if pdf_source != "📤 Upload My PDF File" else "",
-            placeholder="e.g. RAMK, RA, AKSHAY",
-            help="Upper, lower, and capitalized variations will be checked automatically.",
-        ).strip()
-    with col_p2:
-        preset = st.selectbox(
-            "Preset format:",
-            ["Custom", "First 4 Letters of Name", "Full First Name", "PAN Format (5 Letters)"],
-            index=0,
-        )
-
-    col_yr1, col_yr2 = st.columns(2)
-    with col_yr1:
-        smart_y_start = st.number_input("Start Birth Year", min_value=1940, max_value=2030, value=1985, key="sm_y1")
-    with col_yr2:
-        smart_y_end = st.number_input("End Birth Year", min_value=1940, max_value=2030, value=2015, key="sm_y2")
-
-    if smart_y_start > smart_y_end:
-        st.error("Start year must be <= End year")
-    else:
-        years = [str(y) for y in range(int(smart_y_start), int(smart_y_end) + 1)]
-        if prefix_input:
-            prefixes = [prefix_input.upper(), prefix_input.lower(), prefix_input.capitalize()]
-            prefixes = list(dict.fromkeys(prefixes))
-            candidates_list = [f"{p}{y}" for p in prefixes for y in years]
-        else:
-            candidates_list = years
-        estimated_total = len(candidates_list)
-        st.caption(f"📊 Total search space: **{estimated_total:,} passwords** (Estimated time: **< 1 second**)")
-
-# --- Tab 2: Numeric PIN ---
-with tab_pin:
-    st.markdown("💡 *Best for 4-digit or 6-digit numeric PINs (Aadhaar, Credit Card Statements, Mobile PIN)*")
-    pin_len = st.slider("Select PIN Length", min_value=4, max_value=8, value=4, step=1)
-    estimated_total_pin = 10 ** pin_len
-    st.caption(f"📊 Total combinations: **{estimated_total_pin:,}** (`{'0'*pin_len}` to `{'9'*pin_len}`)")
-
-    def make_pin_gen(l: int):
-        fmt = f"{{:0{l}d}}"
-        for i in range(10 ** l):
-            yield fmt.format(i)
-
-    if tab_pin:
-        # If user is in this mode
-        pass
-
-# --- Tab 3: Full 4-Letter Combination ---
-with tab_full:
-    st.warning("⚠️ Full search over all 4 letters (AAAA to ZZZZ) has ~8 Million candidates. May take a few minutes in browser.")
-    col_fy1, col_fy2 = st.columns(2)
-    with col_fy1:
-        full_y1 = st.number_input("Start Year", min_value=1970, max_value=2030, value=1990, key="f_y1")
-    with col_fy2:
-        full_y2 = st.number_input("End Year", min_value=1970, max_value=2030, value=2005, key="f_y2")
-
-    num_yrs = max(1, int(full_y2 - full_y1 + 1))
-    estimated_total_full = (26 ** 4) * num_yrs
-    st.caption(f"📊 Total candidates: **{estimated_total_full:,}** (456,976 prefixes × {num_yrs} years)")
-
-    def make_full_gen(y_start: int, y_end: int):
-        years_s = [str(y) for y in range(y_start, y_end + 1)]
-        for a, b, c, d in itertools.product(string.ascii_uppercase, repeat=4):
-            p = f"{a}{b}{c}{d}"
-            for y in years_s:
-                yield f"{p}{y}"
-
-# --- Tab 4: Custom Wordlist ---
-with tab_wordlist:
-    st.markdown("💡 *Upload a `.txt` wordlist or paste common passwords line-by-line.*")
-    wl_file = st.file_uploader("Upload Wordlist (.txt)", type=["txt"], key="wl_up")
-    wl_text = st.text_area("Or enter passwords (one per line):", placeholder="Pass@123\nWelcome2024\n123456\nAdmin#1", height=100)
-    
-    words = []
-    if wl_file:
-        words.extend(wl_file.read().decode("utf-8", errors="ignore").splitlines())
-    if wl_text.strip():
-        words.extend(wl_text.splitlines())
-    custom_words = list(dict.fromkeys([w.strip() for w in words if w.strip()]))
-    estimated_total_wl = len(custom_words)
-    st.caption(f"📊 Total words loaded: **{estimated_total_wl:,}**")
-
-st.divider()
+st.write("")
 
 # -----------------------------------------------------------------------------
-# 6. Step 3: Execution & Real-Time Performance Monitor
+# 6. Step 2: Recovery Pattern
 # -----------------------------------------------------------------------------
 
-st.markdown("### 🚀 Step 3: Run Recovery")
+st.subheader("2️⃣ Choose Search Pattern")
 
-active_tab = st.selectbox(
-    "Confirm Search Mode to Execute:",
+pattern_mode = st.radio(
+    "Pattern Type",
     [
-        "🚀 Smart Pattern (Prefix + Year)",
-        "🔢 Numeric PIN",
-        "🔤 Full A-Z Search",
-        "📝 Custom Wordlist",
+        "⚡ Smart Pattern (Name / Initials + Birth Year)",
+        "🔢 Numeric PIN (4 to 8 Digits)",
+        "🔤 Full Pattern (AAAA to ZZZZ + Years)",
+        "📝 Custom Passwords List",
     ],
     index=0,
 )
 
-# Assign generator based on chosen active mode
-if active_tab == "🚀 Smart Pattern (Prefix + Year)":
-    chosen_gen = candidates_list
-    total_candidates_to_test = estimated_total
-elif active_tab == "🔢 Numeric PIN":
-    chosen_gen = make_pin_gen(pin_len)
-    total_candidates_to_test = estimated_total_pin
-elif active_tab == "🔤 Full A-Z Search":
-    chosen_gen = make_full_gen(int(full_y1), int(full_y2))
-    total_candidates_to_test = estimated_total_full
-else:
-    chosen_gen = custom_words
-    total_candidates_to_test = estimated_total_wl
+candidates: Union[list[str], Generator[str, None, None]] = []
+total_count = 0
 
-col_btn, col_info = st.columns([1.5, 2.5])
-with col_btn:
-    start_btn = st.button("🔓 Start Password Recovery", type="primary", use_container_width=True, disabled=not pdf_ready)
-with col_info:
-    if pdf_ready:
-        st.write(f"Ready to test **{total_candidates_to_test:,}** candidate combinations.")
+if pattern_mode == "⚡ Smart Pattern (Name / Initials + Birth Year)":
+    st.caption("Common format for Payslips, Bank Statements & PAN (e.g. `RAMK1995`, `AKSHAY2000`)")
+    
+    col_p, col_y = st.columns([1.2, 1.8])
+    with col_p:
+        name_prefix = st.text_input(
+            "Known Name / Initials",
+            value="RAMK" if source_choice != "📁 My PDF Document" else "",
+            placeholder="e.g. RAMK, RA, AKSHAY",
+        ).strip()
+    with col_y:
+        col_y1, col_y2 = st.columns(2)
+        with col_y1:
+            y_start = st.number_input("Start Year", min_value=1940, max_value=2030, value=1980)
+        with col_y2:
+            y_end = st.number_input("End Year", min_value=1940, max_value=2030, value=2015)
+            
+    if y_start > y_end:
+        st.error("Start year must be <= End year")
     else:
-        st.write("Please select or upload a valid encrypted PDF above first.")
+        years_list = [str(y) for y in range(int(y_start), int(y_end) + 1)]
+        if name_prefix:
+            variants = [name_prefix.upper(), name_prefix.lower(), name_prefix.capitalize()]
+            variants = list(dict.fromkeys(variants))
+            candidates = [f"{v}{y}" for v in variants for y in years_list]
+        else:
+            candidates = years_list
+        total_count = len(candidates)
+        st.caption(f"Candidates to test: **{total_count:,}** (Instant: < 1 second)")
 
-if start_btn and pdf_ready:
-    if total_candidates_to_test == 0:
-        st.error("❌ No candidates configured. Please enter prefix/passwords in Step 2.")
-    else:
-        progress_bar = st.progress(0.0)
-        status_msg = st.empty()
+elif pattern_mode == "🔢 Numeric PIN (4 to 8 Digits)":
+    st.caption("Common format for Aadhaar, Bank PIN, Credit Cards (e.g. `0000` to `9999`)")
+    pin_digits = st.slider("PIN Length", min_value=4, max_value=8, value=4)
+    total_count = 10 ** pin_digits
+    st.caption(f"Total PIN combinations: **{total_count:,}**")
+
+    def pin_generator(length: int):
+        fmt = f"{{:0{length}d}}"
+        for i in range(10 ** length):
+            yield fmt.format(i)
+
+    candidates = pin_generator(pin_digits)
+
+elif pattern_mode == "🔤 Full Pattern (AAAA to ZZZZ + Years)":
+    st.caption("Brute forces all 4 uppercase letters combinations (A-Z) + Year range.")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        fy1 = st.number_input("From Year", min_value=1960, max_value=2030, value=1990)
+    with col_f2:
+        fy2 = st.number_input("To Year", min_value=1960, max_value=2030, value=2005)
         
-        # Real-time metrics grid
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            m_tested = st.empty()
-        with col2:
-            m_candidate = st.empty()
-        with col3:
-            m_rate = st.empty()
-        with col4:
-            m_elapsed = st.empty()
+    num_years = max(1, int(fy2 - fy1 + 1))
+    total_count = (26 ** 4) * num_years
+    st.caption(f"Total candidates: **{total_count:,}** (456,976 prefixes × {num_years} years)")
+
+    def full_generator(start_y: int, end_y: int):
+        yrs = [str(y) for y in range(start_y, end_y + 1)]
+        for a, b, c, d in itertools.product(string.ascii_uppercase, repeat=4):
+            pref = f"{a}{b}{c}{d}"
+            for yr in yrs:
+                yield f"{pref}{yr}"
+
+    candidates = full_generator(int(fy1), int(fy2))
+
+else:
+    st.caption("Upload a `.txt` wordlist or paste passwords line-by-line.")
+    uploaded_txt = st.file_uploader("Upload Wordlist (.txt)", type=["txt"])
+    text_input = st.text_area("Or enter passwords (one per line):", height=90)
+    words = []
+    if uploaded_txt:
+        words.extend(uploaded_txt.read().decode("utf-8", errors="ignore").splitlines())
+    if text_input.strip():
+        words.extend(text_input.splitlines())
+    candidates = list(dict.fromkeys([w.strip() for w in words if w.strip()]))
+    total_count = len(candidates)
+    st.caption(f"Loaded passwords: **{total_count:,}**")
+
+st.write("")
+
+# -----------------------------------------------------------------------------
+# 7. Step 3: Run Recovery
+# -----------------------------------------------------------------------------
+
+st.subheader("3️⃣ Run Recovery")
+
+start_action = st.button(
+    "🚀 Start Password Search",
+    type="primary",
+    use_container_width=True,
+    disabled=not pdf_valid,
+)
+
+if start_action and pdf_valid:
+    if total_count == 0:
+        st.warning("⚠️ No passwords to test. Please check Step 2.")
+    else:
+        p_bar = st.progress(0.0)
+        status_box = st.empty()
+        
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            val_tested = st.empty()
+        with c2:
+            val_current = st.empty()
+        with c3:
+            val_speed = st.empty()
+        with c4:
+            val_time = st.empty()
 
         reader = PdfReader(io.BytesIO(pdf_bytes))
-        start_time = time.monotonic()
-        tested = 0
-        found_password = None
-        last_ui_refresh = start_time
-        
-        status_msg.info("🔄 Searching for matching password...")
-        
-        for candidate in chosen_gen:
+        t_start = time.monotonic()
+        tested_num = 0
+        found_pwd = None
+        last_refresh = t_start
+
+        status_box.info("🔄 Searching for correct password...")
+
+        for cand in candidates:
             try:
-                is_match = reader.decrypt(candidate)
+                matched = reader.decrypt(cand)
             except Exception:
-                is_match = 0
+                matched = 0
 
-            tested += 1
+            tested_num += 1
 
-            if is_match:
-                found_password = candidate
+            if matched:
+                found_pwd = cand
                 break
 
-            now = time.monotonic()
-            if (now - last_ui_refresh) >= 0.25 or (tested % 400 == 0):
-                elapsed = now - start_time
-                rate = tested / elapsed if elapsed > 0 else 0.0
-                pct = min(1.0, tested / total_candidates_to_test) if total_candidates_to_test > 0 else 0.0
-                
-                progress_bar.progress(pct)
-                m_tested.metric("Tested", f"{tested:,}")
-                m_candidate.metric("Current", candidate)
-                m_rate.metric("Speed", f"{rate:,.0f} /s")
-                m_elapsed.metric("Elapsed", f"{elapsed:.1f}s")
-                last_ui_refresh = now
+            t_now = time.monotonic()
+            if (t_now - last_refresh) >= 0.25 or (tested_num % 300 == 0):
+                elapsed_s = t_now - t_start
+                rate = tested_num / elapsed_s if elapsed_s > 0 else 0.0
+                progress_fraction = min(1.0, tested_num / total_count) if total_count > 0 else 0.0
 
-        elapsed_total = time.monotonic() - start_time
-        progress_bar.progress(1.0 if found_password else min(1.0, tested / total_candidates_to_test if total_candidates_to_test > 0 else 1.0))
-        status_msg.empty()
+                p_bar.progress(progress_fraction)
+                val_tested.metric("Tested", f"{tested_num:,}")
+                val_current.metric("Current", cand)
+                val_speed.metric("Speed", f"{rate:,.0f} /s")
+                val_time.metric("Elapsed", f"{elapsed_s:.1f}s")
+                last_refresh = t_now
 
-        if found_password:
+        total_elapsed = time.monotonic() - t_start
+        p_bar.progress(1.0 if found_pwd else min(1.0, tested_num / total_count if total_count > 0 else 1.0))
+        status_box.empty()
+
+        if found_pwd:
             st.balloons()
             st.markdown(
                 f"""
-                <div class="success-banner">
-                    <h2 style="color: #10b981; margin: 0 0 0.5rem 0;">🎉 Password Successfully Found!</h2>
-                    <div>The password for <b>{file_name}</b> is:</div>
-                    <div class="password-display">{found_password}</div>
-                    <div style="color: #94a3b8; font-size: 0.9rem;">
-                        Tested <b>{tested:,}</b> passwords in <b>{elapsed_total:.2f}s</b> ({tested/elapsed_total if elapsed_total>0 else 0:,.0f} passwords/sec).
+                <div class="success-box">
+                    <h3 style="color: #10b981; margin: 0 0 0.4rem 0;">🎉 Password Found!</h3>
+                    <div>Password for <b>{file_name}</b>:</div>
+                    <div class="pwd-pill">{found_pwd}</div>
+                    <div style="color: #94a3b8; font-size: 0.85rem; margin-top: 0.3rem;">
+                        Tested <b>{tested_num:,}</b> candidates in <b>{total_elapsed:.2f}s</b> ({tested_num/total_elapsed if total_elapsed>0 else 0:,.0f} passwords/sec).
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            # 1-Click Decrypted PDF Download
-            unlocked_pdf = create_unlocked_pdf(pdf_bytes, found_password)
-            if unlocked_pdf:
-                st.markdown("#### ⬇️ Step 4: Download Unlocked (No Password) PDF")
+            # Unlocked PDF direct download
+            unlocked_data = generate_unlocked_pdf(pdf_bytes, found_pwd)
+            if unlocked_data:
                 st.download_button(
-                    label="📥 Click to Download Unprotected PDF",
-                    data=unlocked_pdf,
+                    label="📥 Download Unlocked (No Password) PDF",
+                    data=unlocked_data,
                     file_name=f"unlocked_{file_name}",
                     mime="application/pdf",
                     type="primary",
                     use_container_width=True,
                 )
-                st.success("✨ Downloaded PDF will never ask for a password again!")
         else:
             st.error(
-                f"❌ Password not found among the **{tested:,}** tested candidates ({elapsed_total:.1f}s).\n\n"
-                "**Tips**: Try checking the Smart Pattern with your full name or try a wider birth year range."
+                f"❌ Password not found among **{tested_num:,}** tested candidates ({total_elapsed:.1f}s).\n\n"
+                "Try adjusting the name initials or expanding the birth year range in Step 2."
             )
 
 # -----------------------------------------------------------------------------
-# 7. Footer & Security Assurance
+# 8. Footer
 # -----------------------------------------------------------------------------
 st.markdown(
     """
-    <div style="text-align: center; margin-top: 3rem; color: #64748b; font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem;">
-        🔒 <b>100% In-Memory & Private</b>: PDF files and passwords are never sent to external servers or logged.
+    <div style="text-align: center; margin-top: 2.5rem; color: #64748b; font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1rem;">
+        🔒 <b>100% Client-Side Privacy</b>: Files are processed strictly in temporary session memory and never saved.
     </div>
     """,
     unsafe_allow_html=True,

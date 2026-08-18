@@ -51,14 +51,6 @@ st.markdown(
         font-size: 0.95rem;
     }
 
-    .card-box {
-        background: #131b2e;
-        border: 1px solid #1e293b;
-        border-radius: 12px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-
     .success-box {
         background: rgba(16, 185, 129, 0.12);
         border: 1px solid #10b981;
@@ -98,16 +90,19 @@ st.markdown(
 # 3. Core Logic Helpers
 # -----------------------------------------------------------------------------
 
-def validate_pdf_stream(pdf_bytes: bytes) -> tuple[bool, str, int]:
-    """Validates if PDF is readable and encrypted."""
+def validate_pdf_stream(pdf_bytes: bytes) -> tuple[bool, str]:
+    """
+    Validates if PDF is readable and encrypted.
+    Note: For encrypted PDFs, accessing reader.pages raises FileNotDecryptedError,
+    so we only check reader.is_encrypted safely.
+    """
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
-        num_pages = len(reader.pages)
         if not reader.is_encrypted:
-            return False, "This PDF is already unprotected (No password required).", num_pages
-        return True, "Valid password-protected PDF.", num_pages
+            return False, "This PDF is already unprotected (No password required)."
+        return True, "Valid password-protected PDF."
     except Exception as exc:
-        return False, f"Could not read PDF: {exc}", 0
+        return False, f"Could not read PDF: {exc}"
 
 
 def generate_unlocked_pdf(pdf_bytes: bytes, password: str) -> bytes | None:
@@ -186,9 +181,9 @@ else:
 # Validation check
 pdf_valid = False
 if pdf_bytes is not None:
-    is_valid, msg, pages = validate_pdf_stream(pdf_bytes)
+    is_valid, msg = validate_pdf_stream(pdf_bytes)
     if is_valid:
-        st.success(f"✅ **{file_name}** ({pages} page{'s' if pages>1 else ''}) - Locked & Ready to Search.")
+        st.success(f"✅ **{file_name}** - Password-protected PDF detected & ready.")
         pdf_valid = True
     else:
         st.error(f"❌ {msg}")
